@@ -646,150 +646,189 @@ end
 --                    WINDUI INTERFACE
 -- ══════════════════════════════════════════════════════════════════
 
--- Tạo codeBox ẩn để Highlight render
+-- codebox ẩn để Highlight render (giữ nguyên API gốc)
 local HiddenGui = Create("ScreenGui", {ResetOnSpawn = false})
 local HiddenCodeFrame = Create("Frame", {
     Parent = HiddenGui,
     BackgroundColor3 = Color3.fromRGB(21, 20, 22),
     BorderSizePixel = 0,
-    Size = UDim2.new(1, 0, 0, 180),
-    Visible = true,
+    Size = UDim2.new(1, 0, 0, 1),
+    Visible = false,
 })
 HiddenGui.Parent = (gethui and gethui()) or CoreGui
 codebox = Highlight.new(HiddenCodeFrame)
 
--- Tạo WindUI Window
+-- ── Tạo WindUI Window ─────────────────────────────────────────────
 local Window = WindUI:CreateWindow({
     Title = "GazzSpy",
-    Icon = "shield",
-    Author = "GazzSpy Edition",
+    Icon = "radar",
+    Author = "Remote Spy • WindUI Edition",
     Folder = "GazzSpy",
-    Size = UDim2.fromOffset(580, 460),
-    Transparency = 0.85,
+    Size = UDim2.fromOffset(600, 480),
+    Transparency = 0.9,
     Theme = "Dark",
     DisableIntro = false,
     SaveWindowState = true,
-    User = {
-        Enabled = true,
-        Anonymous = false,
-        Callback = function()
-            WindUI:Notify({
-                Title = "GazzSpy",
-                Content = "Remote Spy by GazzSpy Edition",
-                Duration = 3,
-                Icon = "shield",
-            })
-        end
-    },
 })
 
--- ── TAB 1: SPY ─────────────────────────────────────────────────────
-local SpyTab = Window:Tab({
-    Title = "Spy",
-    Icon = "radar",
+-- ══════════════════════════════════════════════════════════════════
+--   TAB 1 — SPY  (Danh sách remote + xem code)
+-- ══════════════════════════════════════════════════════════════════
+local SpyTab = Window:Tab({ Title = "Spy", Icon = "radar" })
+
+-- Section hiển thị code của remote đang chọn
+local CodeSection = SpyTab:Section({
+    Title = "Code Remote Đang Chọn",
+    Icon = "code",
+    Closed = false,
 })
 
--- Section: Remote List
-local RemoteSection = SpyTab:Section({
-    Title = "Remote Logs",
-    Desc = "Các remote đang được spy",
+-- Paragraph dùng để hiển thị code (update realtime khi click remote)
+local CodeParagraph = CodeSection:Paragraph({
+    Title = "Chưa chọn remote nào",
+    Desc = "-- Nhấn vào một remote bên dưới để xem code...",
+})
+
+-- Section chứa danh sách remote (Button động — giống SimpleSpy gốc)
+local RemoteListSection = SpyTab:Section({
+    Title = "Danh Sách Remote (0)",
     Icon = "list",
     Closed = false,
 })
 
--- Dropdown chọn remote từ logs
-local RemoteDropdown = SpyTab:Dropdown({
-    Title = "Chọn Remote",
-    Desc = "Remote đã được log sẽ hiện ở đây",
-    Icon = "wifi",
-    Values = {"(chưa có log nào)"},
-    Value = "(chưa có log nào)",
-    Callback = function(val)
-        -- Tìm log theo tên
-        for _, log in next, logs do
-            if log.Remote and log.Remote.Name == val then
-                selected = log
-                local code = log.GenScript or ""
-                if code:find("Generating") then
-                    code = genScript(log.Remote, log.args)
-                    log.GenScript = code
-                end
-                codebox:setRaw(code)
-                break
-            end
-        end
+-- Biến lưu trạng thái UI
+local remoteCount = 0
+local remoteButtonMap = {}   -- log → WindUI Button element
+local remoteButtonObjects = {}  -- lưu object để Destroy sau
+local selectedButton = nil
+
+-- Hàm cập nhật title section đếm remote
+local function updateRemoteCountTitle()
+    xpcall(function()
+        -- [remoteCount đã được hiện trong title button]
+    end, function() end)
+end
+
+-- Hàm được gọi khi click một remote button
+local function selectRemote(log, btn)
+    selected = log
+    -- Sinh code nếu chưa có
+    if not log.GenScript or log.GenScript:find("Generating, please wait") then
+        xpcall(function()
+            log.GenScript = genScript(log.Remote, log.args)
+        end, function(err)
+            log.GenScript = "-- Lỗi sinh code: " .. tostring(err)
+        end)
     end
-})
+    -- Hiện code trong paragraph
+    local code = log.GenScript or "-- Không có code"
+    xpcall(function()
+        CodeParagraph:SetTitle("Remote: " .. tostring(log.Name) .. "  [" .. (log.Remote and log.Remote.ClassName or "?") .. "]")
+        CodeParagraph:SetDesc(code)
+    end, function() end)
+    -- Sync sang hidden codebox (cho các thao tác copy/run)
+    codebox:setRaw(code)
+    WindUI:Notify({
+        Title = "Remote Đã Chọn",
+        Content = tostring(log.Name),
+        Duration = 1.5,
+        Icon = "check",
+    })
+end
 
--- Code hiển thị trong WindUI (read-only input box)
-local CodeDisplay = SpyTab:Input({
-    Title = "Generated Code",
-    Desc = "Code của remote đang chọn",
-    Icon = "code",
-    Placeholder = "-- Chọn remote để xem code...",
-    Value = "",
-    Callback = function() end,
-})
-
--- Section: Spy Controls
-local SpyControlSection = SpyTab:Section({
-    Title = "Spy Controls",
+-- Section điều khiển spy
+local SpyCtrlSection = SpyTab:Section({
+    Title = "Điều Khiển",
     Icon = "settings",
     Closed = false,
 })
 
--- Toggle bật/tắt spy
-local SpyToggle = SpyControlSection:Toggle({
-    Title = "Bật Spy",
-    Desc = "Bật/tắt hook remote",
+local SpyToggle = SpyCtrlSection:Toggle({
+    Title = "Bật/Tắt Spy",
+    Desc = "Hook remote — bật để bắt đầu ghi log",
     Icon = "power",
     Value = false,
     Callback = function(state)
         toggleSpyMethod()
         WindUI:Notify({
             Title = "GazzSpy",
-            Content = state and "Spy da bat!" or "Spy da tat!",
+            Content = state and "✓ Spy đã bật — đang ghi log!" or "✗ Spy đã tắt.",
             Duration = 2,
             Icon = state and "check" or "x",
         })
     end
 })
 
--- Copy Code
-SpyControlSection:Button({
-    Title = "Copy Code",
-    Desc = "Sao chép code remote đang chọn",
+SpyCtrlSection:Button({
+    Title = "Xoá Tất Cả Log",
+    Desc = "Xoá toàn bộ remote đã ghi",
+    Icon = "trash-2",
+    Callback = function()
+        clear(logs)
+        selected = nil
+        remoteCount = 0
+        remoteButtonMap = {}
+        codebox:setRaw("")
+        xpcall(function()
+            CodeParagraph:SetTitle("Chưa chọn remote nào")
+            CodeParagraph:SetDesc("-- Nhấn vào một remote bên dưới để xem code...")
+            -- reset remote count display
+        end, function() end)
+        -- Destroy các button cũ trong section
+        xpcall(function()
+            -- Destroy thông qua bảng remoteButtonObjects
+            for _, obj in next, remoteButtonObjects do
+                xpcall(function() obj:Destroy() end, function() end)
+            end
+            remoteButtonObjects = {}
+        end, function() end)
+        WindUI:Notify({ Title = "GazzSpy", Content = "Đã xoá tất cả log!", Duration = 2, Icon = "check" })
+    end
+})
+
+-- ══════════════════════════════════════════════════════════════════
+--   TAB 2 — PHÂN TÍCH  (Function Info, Decompile...)
+-- ══════════════════════════════════════════════════════════════════
+local AnalyzeTab = Window:Tab({ Title = "Phân Tích", Icon = "search" })
+
+local FuncSection = AnalyzeTab:Section({
+    Title = "Function Info",
+    Icon = "zap",
+    Closed = false,
+})
+
+FuncSection:Button({
+    Title = "Copy Code Remote",
+    Desc = "Sao chép code của remote đang chọn",
     Icon = "copy",
     Callback = function()
         local code = codebox:getString()
         if code and code ~= "" then
             setclipboard(code)
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da copy code!", Duration = 2, Icon = "check" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã copy code!", Duration = 2, Icon = "check" })
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Khong co code de copy!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Không có code để copy!", Duration = 2, Icon = "alert-triangle" })
         end
     end
 })
 
--- Copy Remote Path
-SpyControlSection:Button({
-    Title = "Copy Remote Path",
-    Desc = "Sao chép đường dẫn remote",
+FuncSection:Button({
+    Title = "Copy Đường Dẫn Remote",
+    Desc = "Sao chép full path của remote đang chọn",
     Icon = "link",
     Callback = function()
         if selected and selected.Remote then
             setclipboard(v2s(selected.Remote))
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da copy path!", Duration = 2, Icon = "check" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã copy path remote!", Duration = 2, Icon = "check" })
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote nào!", Duration = 2, Icon = "alert-triangle" })
         end
     end
 })
 
--- Run Code
-SpyControlSection:Button({
-    Title = "Run Code",
-    Desc = "Thực thi code remote đang chọn",
+FuncSection:Button({
+    Title = "Thực Thi Code",
+    Desc = "Chạy lại remote đang chọn với args gốc",
     Icon = "play",
     Callback = function()
         local Remote = selected and selected.Remote
@@ -800,92 +839,66 @@ SpyControlSection:Button({
                 elseif Remote:IsA("RemoteFunction") then
                     Remote:InvokeServer(unpack(selected.args))
                 end
-                WindUI:Notify({ Title = "GazzSpy", Content = "Da execute!", Duration = 2, Icon = "check" })
+                WindUI:Notify({ Title = "GazzSpy", Content = "Đã thực thi remote!", Duration = 2, Icon = "check" })
             end, function(err)
                 WindUI:Notify({ Title = "Lỗi", Content = tostring(err), Duration = 4, Icon = "x" })
             end)
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote nào!", Duration = 2, Icon = "alert-triangle" })
         end
     end
 })
 
--- Clear Logs
-SpyControlSection:Button({
-    Title = "Clear Logs",
-    Desc = "Xóa tất cả remote đã log",
-    Icon = "trash-2",
-    Callback = function()
-        clear(logs)
-        selected = nil
-        codebox:setRaw("")
-        -- Reset dropdown
-        RemoteDropdown:Set("(chua co log nao)")
-        WindUI:Notify({ Title = "GazzSpy", Content = "Da xoa logs!", Duration = 2, Icon = "check" })
-    end
-})
-
--- ── TAB 2: ANALYZE ─────────────────────────────────────────────────
-local AnalyzeTab = Window:Tab({
-    Title = "Analyze",
-    Icon = "search",
-})
-
-local FuncSection = AnalyzeTab:Section({
-    Title = "Function Info",
-    Icon = "zap",
-    Closed = false,
-})
-
--- Get Script Source
 FuncSection:Button({
-    Title = "Get Script Source",
-    Desc = "Lấy script gọi remote",
+    Title = "Lấy Script Gốc",
+    Desc = "Copy script gọi remote vào clipboard",
     Icon = "file-code",
     Callback = function()
         if selected then
-            if not selected.Source then selected.Source = rawget(getfenv(selected.Function),"script") end
+            if not selected.Source then selected.Source = rawget(getfenv(selected.Function), "script") end
             setclipboard(v2s(selected.Source))
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da copy script source!", Duration = 2, Icon = "check" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã copy script source!", Duration = 2, Icon = "check" })
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote nào!", Duration = 2, Icon = "alert-triangle" })
         end
     end
 })
 
--- Function Info (hiển thị trong codebox)
 FuncSection:Button({
-    Title = "View Function Info",
-    Desc = "Xem thông tin function gọi remote",
+    Title = "Xem Function Info",
+    Desc = "Hiện thông tin chi tiết function gọi remote",
     Icon = "info",
     Callback = function()
         local func = selected and selected.Function
         if func then
             local typeoffunc = typeof(func)
-            if typeoffunc ~= 'string' then
-                codebox:setRaw("--[[Generating Function Info please wait]]")
+            if typeoffunc ~= "string" then
+                codebox:setRaw("--[[Đang tạo Function Info, vui lòng chờ...]]")
                 RunService.Heartbeat:Wait()
                 local lclosure = islclosure(func)
-                local SourceScript = rawget(getfenv(func),"script")
-                local CallingScript = selected.Source or nil
+                local SourceScript = rawget(getfenv(func), "script")
                 local infoData = {
                     info = getinfo(func),
-                    constants = lclosure and deepclone(getconstants(func)) or "N/A --Lua Closure expected got C Closure",
+                    constants = lclosure and deepclone(getconstants(func)) or "N/A -- C Closure",
                     upvalues = deepclone(getupvalues(func)),
-                    script = {SourceScript = SourceScript or 'nil', CallingScript = CallingScript or 'nil'}
+                    script = {SourceScript = SourceScript or "nil", CallingScript = (selected.Source or "nil")}
                 }
-                codebox:setRaw("--[[Converting table to string please wait]]")
+                codebox:setRaw("--[[Đang chuyển đổi, vui lòng chờ...]]")
                 selected.Function = v2v({functionInfo = infoData})
             end
-            codebox:setRaw("-- Calling function info\n-- Generated by GazzSpy\n\n"..selected.Function)
-            WindUI:Notify({ Title = "GazzSpy", Content = "Function info da tao!", Duration = 2, Icon = "check" })
+            local infoStr = "-- Function Info — Remote: " .. tostring(selected.Name) .. "\n-- Tạo bởi GazzSpy\n\n" .. selected.Function
+            codebox:setRaw(infoStr)
+            xpcall(function()
+                CodeParagraph:SetTitle("Function Info: " .. tostring(selected.Name))
+                CodeParagraph:SetDesc(infoStr)
+            end, function() end)
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã tạo Function Info!", Duration = 2, Icon = "check" })
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Khong tim thay function!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Không tìm thấy function!", Duration = 2, Icon = "alert-triangle" })
         end
     end
 })
 
--- Decompile
 FuncSection:Button({
     Title = "Decompile Script",
     Desc = "Decompile source script của remote",
@@ -895,342 +908,345 @@ FuncSection:Button({
             if selected and selected.Source then
                 local Source = selected.Source
                 if not DecompiledScripts[Source] then
-                    codebox:setRaw("--[[Decompiling...]]")
+                    codebox:setRaw("--[[Đang decompile...]]")
                     xpcall(function()
-                        local decompiledsource = decompile(Source):gsub("-- Decompiled with the Synapse X Luau decompiler.","")
+                        local result = decompile(Source):gsub("-- Decompiled with the Synapse X Luau decompiler.", "")
                         local Sourcev2s = v2s(Source)
-                        if (decompiledsource):find("script") and Sourcev2s then
-                            DecompiledScripts[Source] = ("local script = %s\n%s"):format(Sourcev2s,decompiledsource)
+                        if result:find("script") and Sourcev2s then
+                            DecompiledScripts[Source] = ("local script = %s\n%s"):format(Sourcev2s, result)
                         end
-                    end,function(err)
-                        codebox:setRaw(("--[[\nError:\n%s\n]]"):format(err))
+                    end, function(err)
+                        codebox:setRaw(("--[[\nLỗi:\n%s\n]]"):format(err))
                     end)
                 end
-                codebox:setRaw(DecompiledScripts[Source] or "--No Source Found")
-                WindUI:Notify({ Title = "GazzSpy", Content = "Da decompile!", Duration = 2, Icon = "check" })
+                local dec = DecompiledScripts[Source] or "--No Source Found"
+                codebox:setRaw(dec)
+                xpcall(function()
+                    CodeParagraph:SetTitle("Decompile: " .. tostring(selected.Name))
+                    CodeParagraph:SetDesc(dec)
+                end, function() end)
+                WindUI:Notify({ Title = "GazzSpy", Content = "Đã decompile!", Duration = 2, Icon = "check" })
             else
-                WindUI:Notify({ Title = "GazzSpy", Content = "Source not found!", Duration = 2, Icon = "alert-triangle" })
+                WindUI:Notify({ Title = "GazzSpy", Content = "Không tìm thấy source!", Duration = 2, Icon = "alert-triangle" })
             end
         else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Executor khong co decompile!", Duration = 2, Icon = "x" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Executor không có hàm decompile!", Duration = 3, Icon = "x" })
         end
     end
 })
 
--- ── TAB 3: FILTER ──────────────────────────────────────────────────
-local FilterTab = Window:Tab({
-    Title = "Filter",
-    Icon = "filter",
-})
+-- ══════════════════════════════════════════════════════════════════
+--   TAB 3 — LỌC  (Exclude & Block)
+-- ══════════════════════════════════════════════════════════════════
+local FilterTab = Window:Tab({ Title = "Lọc", Icon = "filter" })
 
 local ExcludeSection = FilterTab:Section({
-    Title = "Exclude (An remote)",
+    Title = "Ẩn Remote (Exclude)",
     Icon = "eye-off",
     Closed = false,
 })
 
 ExcludeSection:Button({
-    Title = "Exclude (theo ID)",
-    Desc = "An remote nay (theo debug ID)",
+    Title = "Ẩn Remote Này (theo ID)",
+    Desc = "Remote vẫn hoạt động nhưng GazzSpy sẽ không log nữa",
     Icon = "minus-circle",
     Callback = function()
         if selected then
             blacklist[OldDebugId(selected.Remote)] = true
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da exclude: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
-        else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
-        end
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã ẩn: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
+        else WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote!", Duration = 2, Icon = "alert-triangle" }) end
     end
 })
 
 ExcludeSection:Button({
-    Title = "Exclude (theo ten)",
-    Desc = "An tat ca remote cung ten",
+    Title = "Ẩn Theo Tên",
+    Desc = "Ẩn tất cả remote có cùng tên — thích hợp để ẩn remote spam",
     Icon = "minus-square",
     Callback = function()
         if selected then
             blacklist[selected.Name] = true
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da exclude ten: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
-        else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
-        end
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã ẩn tên: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
+        else WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote!", Duration = 2, Icon = "alert-triangle" }) end
     end
 })
 
 ExcludeSection:Button({
-    Title = "Xoa Exclude List",
-    Desc = "Cac remote bi an se hien lai",
+    Title = "Xoá Danh Sách Ẩn",
+    Desc = "Các remote bị ẩn sẽ hiện lại và được log bình thường",
     Icon = "refresh-cw",
     Callback = function()
         blacklist = {}
-        WindUI:Notify({ Title = "GazzSpy", Content = "Da xoa exclude list!", Duration = 2, Icon = "check" })
+        WindUI:Notify({ Title = "GazzSpy", Content = "Đã xoá danh sách ẩn!", Duration = 2, Icon = "check" })
     end
 })
 
 local BlockSection = FilterTab:Section({
-    Title = "Block (Chan remote fire)",
+    Title = "Chặn Remote (Block)",
     Icon = "slash",
     Closed = false,
 })
 
 BlockSection:Button({
-    Title = "Block (theo ID)",
-    Desc = "Chan remote nay khoi fire server",
+    Title = "Chặn Remote Này (theo ID)",
+    Desc = "Ngăn remote này gửi dữ liệu lên server",
     Icon = "shield-off",
     Callback = function()
         if selected then
             blocklist[OldDebugId(selected.Remote)] = true
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da block: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
-        else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
-        end
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã chặn: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
+        else WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote!", Duration = 2, Icon = "alert-triangle" }) end
     end
 })
 
 BlockSection:Button({
-    Title = "Block (theo ten)",
-    Desc = "Chan tat ca remote cung ten",
+    Title = "Chặn Theo Tên",
+    Desc = "Chặn tất cả remote có cùng tên",
     Icon = "shield-x",
     Callback = function()
         if selected then
             blocklist[selected.Name] = true
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da block ten: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
-        else
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote!", Duration = 2, Icon = "alert-triangle" })
-        end
+            WindUI:Notify({ Title = "GazzSpy", Content = "Đã chặn tên: " .. tostring(selected.Name), Duration = 2, Icon = "check" })
+        else WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote!", Duration = 2, Icon = "alert-triangle" }) end
     end
 })
 
 BlockSection:Button({
-    Title = "Xoa Block List",
-    Desc = "Cac remote bi chan se hoat dong lai",
+    Title = "Xoá Danh Sách Chặn",
+    Desc = "Các remote bị chặn sẽ hoạt động lại bình thường",
     Icon = "refresh-cw",
     Callback = function()
         blocklist = {}
-        WindUI:Notify({ Title = "GazzSpy", Content = "Da xoa block list!", Duration = 2, Icon = "check" })
+        WindUI:Notify({ Title = "GazzSpy", Content = "Đã xoá danh sách chặn!", Duration = 2, Icon = "check" })
     end
 })
 
--- ── TAB 4: SAVE (GazzSpy) ──────────────────────────────────────────
-local SaveTab = Window:Tab({
-    Title = "GazzSave",
-    Icon = "save",
-})
+-- ══════════════════════════════════════════════════════════════════
+--   TAB 4 — LƯU FILE  (GazzSave)
+-- ══════════════════════════════════════════════════════════════════
+local SaveTab = Window:Tab({ Title = "Lưu File", Icon = "save" })
 
 local SaveSection = SaveTab:Section({
-    Title = "Luu Code",
+    Title = "Lưu Code",
     Icon = "download",
     Closed = false,
 })
 
 SaveSection:Button({
-    Title = "Save Current Remote",
-    Desc = "Luu code remote dang chon vao GazzSpy/",
+    Title = "Lưu Remote Đang Chọn",
+    Desc = "Lưu code vào GazzSpy/<tên>_<stamp>.lua",
     Icon = "file-plus",
     Callback = function()
         if not (writefile and isfolder) then
-            WindUI:Notify({ Title = "Loi", Content = "Executor khong ho tro writefile!", Duration = 3, Icon = "x" })
+            WindUI:Notify({ Title = "Lỗi", Content = "Executor không hỗ trợ writefile!", Duration = 3, Icon = "x" })
             return
         end
         if not selected then
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote nao!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote nào!", Duration = 2, Icon = "alert-triangle" })
             return
         end
         local code = codebox:getString()
         if not code or code == "" then
-            WindUI:Notify({ Title = "GazzSpy", Content = "Code trong, khong luu.", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Code trống, không lưu.", Duration = 2, Icon = "alert-triangle" })
             return
         end
         local remoteName = safeName(selected.Remote and selected.Remote.Name or "Unknown")
         local filename = GAZZSPY_FOLDER .. "/" .. remoteName .. "_" .. getStamp() .. ".lua"
         xpcall(function()
-            writefile(filename, "-- GazzSpy Save | Remote: " .. tostring(remoteName) .. "\n\n" .. code)
-            WindUI:Notify({ Title = "GazzSpy", Content = "Da luu: " .. remoteName .. ".lua", Duration = 3, Icon = "check" })
+            writefile(filename, "-- GazzSpy | Remote: " .. tostring(remoteName) .. "\n\n" .. code)
+            WindUI:Notify({ Title = "Đã Lưu!", Content = remoteName .. ".lua → GazzSpy/", Duration = 3, Icon = "check" })
         end, function(err)
-            WindUI:Notify({ Title = "Loi", Content = tostring(err), Duration = 3, Icon = "x" })
+            WindUI:Notify({ Title = "Lỗi Lưu", Content = tostring(err), Duration = 3, Icon = "x" })
         end)
     end
 })
 
 SaveSection:Button({
-    Title = "Save All Remotes",
-    Desc = "Luu tat ca logs vao GazzSpy/SaveAll.lua",
+    Title = "Lưu Tất Cả Remote",
+    Desc = "Lưu toàn bộ log vào GazzSpy/SaveAll_<stamp>.lua",
     Icon = "layers",
     Callback = function()
         if not (writefile and isfolder) then
-            WindUI:Notify({ Title = "Loi", Content = "Executor khong ho tro writefile!", Duration = 3, Icon = "x" })
+            WindUI:Notify({ Title = "Lỗi", Content = "Executor không hỗ trợ writefile!", Duration = 3, Icon = "x" })
             return
         end
         if #logs == 0 then
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua co log nao!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa có log nào để lưu!", Duration = 2, Icon = "alert-triangle" })
             return
         end
-        WindUI:Notify({ Title = "GazzSpy", Content = "Dang luu tat ca...", Duration = 2, Icon = "loader" })
+        WindUI:Notify({ Title = "GazzSpy", Content = "Đang lưu " .. #logs .. " remote...", Duration = 2, Icon = "loader" })
         spawn(function()
-            local allCode = "-- GazzSpy - Save All Remotes\n"
-                .. "-- Tong so remotes: " .. tostring(#logs) .. "\n\n"
+            local allCode = "-- GazzSpy — Lưu Tất Cả Remote\n-- Số lượng: " .. #logs .. "\n\n"
             local saved = 0
             for idx, log in next, logs do
                 xpcall(function()
-                    local remoteName = tostring(log.Remote and log.Remote.Name or "Unknown_" .. idx)
+                    local rname = tostring(log.Remote and log.Remote.Name or "Unknown_" .. idx)
                     local script = log.GenScript or ""
                     if script:find("Generating, please wait") then
                         script = genScript(log.Remote, log.args)
                     end
-                    allCode = allCode
-                        .. "-- [" .. idx .. "] Remote: " .. remoteName .. "\n"
-                        .. script .. "\n\n"
-                    saved = saved + 1
+                    allCode = allCode .. "-- [" .. idx .. "] " .. rname .. "\n" .. script .. "\n\n"
+                    saved += 1
                 end, function(err)
-                    allCode = allCode .. "-- [" .. idx .. "] Loi: " .. tostring(err) .. "\n\n"
+                    allCode = allCode .. "-- [" .. idx .. "] Lỗi: " .. tostring(err) .. "\n\n"
                 end)
             end
             local filename = GAZZSPY_FOLDER .. "/SaveAll_" .. getStamp() .. ".lua"
             xpcall(function()
                 writefile(filename, allCode)
-                WindUI:Notify({ Title = "GazzSpy", Content = "Da luu " .. saved .. "/" .. #logs .. " remotes!", Duration = 3, Icon = "check" })
+                WindUI:Notify({ Title = "Đã Lưu!", Content = saved .. "/" .. #logs .. " remote → GazzSpy/", Duration = 3, Icon = "check" })
             end, function(err)
-                WindUI:Notify({ Title = "Loi", Content = tostring(err), Duration = 3, Icon = "x" })
+                WindUI:Notify({ Title = "Lỗi Lưu", Content = tostring(err), Duration = 3, Icon = "x" })
             end)
         end)
     end
 })
 
 local FuncStoreSection = SaveTab:Section({
-    Title = "FuncStore",
+    Title = "FuncStore — Lưu Function Info",
     Icon = "database",
     Closed = false,
 })
 
 FuncStoreSection:Button({
-    Title = "Save Function Info",
-    Desc = "Luu Function Info vao GazzSpy/FuncStore/",
+    Title = "Lưu Function Info",
+    Desc = "Lưu thông tin function vào GazzSpy/FuncStore/",
     Icon = "archive",
     Callback = function()
         if not (writefile and isfolder) then
-            WindUI:Notify({ Title = "Loi", Content = "Executor khong ho tro writefile!", Duration = 3, Icon = "x" })
+            WindUI:Notify({ Title = "Lỗi", Content = "Executor không hỗ trợ writefile!", Duration = 3, Icon = "x" })
             return
         end
         if not selected then
-            WindUI:Notify({ Title = "GazzSpy", Content = "Chua chon remote nao!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Chưa chọn remote nào!", Duration = 2, Icon = "alert-triangle" })
             return
         end
         local func = selected and selected.Function
         if not func then
-            WindUI:Notify({ Title = "GazzSpy", Content = "Khong tim thay function!", Duration = 2, Icon = "alert-triangle" })
+            WindUI:Notify({ Title = "GazzSpy", Content = "Không tìm thấy function!", Duration = 2, Icon = "alert-triangle" })
             return
         end
         spawn(function()
             local funcInfo = ""
-            local typeoffunc = typeof(func)
-            if typeoffunc ~= 'string' then
+            if typeof(func) ~= "string" then
                 local ok, result = xpcall(function()
                     local lclosure = islclosure(func)
                     local SourceScript = rawget(getfenv(func), "script")
-                    local CallingScript = selected.Source or nil
-                    local infoData = {
+                    return v2v({functionInfo = {
                         info = getinfo(func),
                         constants = lclosure and deepclone(getconstants(func)) or "N/A",
                         upvalues = deepclone(getupvalues(func)),
-                        script = {SourceScript = SourceScript or 'nil', CallingScript = CallingScript or 'nil'}
-                    }
-                    return v2v({functionInfo = infoData})
-                end, function(err) return "-- Loi gen: " .. tostring(err) end)
-                funcInfo = result or "-- Khong the gen"
+                        script = {SourceScript = SourceScript or "nil", CallingScript = selected.Source or "nil"}
+                    }})
+                end, function(err) return "-- Lỗi: " .. tostring(err) end)
+                funcInfo = result or "-- Không thể tạo info"
             else
                 funcInfo = func
             end
-            local remoteName = safeName(selected.Remote and selected.Remote.Name or "UnknownRemote")
+            local remoteName = safeName(selected.Remote and selected.Remote.Name or "Unknown")
             local filename = GAZZSPY_FUNC_FOLDER .. "/" .. remoteName .. "_FuncInfo_" .. getStamp() .. ".lua"
-            local content = "-- GazzSpy FuncStore\n-- Remote: " .. tostring(remoteName) .. "\n\n" .. funcInfo
+            local content = "-- GazzSpy FuncStore\n-- Remote: " .. remoteName .. "\n\n" .. funcInfo
             xpcall(function()
                 writefile(filename, content)
                 codebox:setRaw(content)
-                WindUI:Notify({ Title = "GazzSpy", Content = "FuncStore: Da luu " .. remoteName, Duration = 3, Icon = "check" })
+                xpcall(function()
+                    CodeParagraph:SetTitle("FuncStore: " .. remoteName)
+                    CodeParagraph:SetDesc(content)
+                end, function() end)
+                WindUI:Notify({ Title = "FuncStore", Content = "Đã lưu " .. remoteName .. "!", Duration = 3, Icon = "check" })
             end, function(err)
-                WindUI:Notify({ Title = "Loi", Content = tostring(err), Duration = 3, Icon = "x" })
+                WindUI:Notify({ Title = "Lỗi FuncStore", Content = tostring(err), Duration = 3, Icon = "x" })
             end)
         end)
     end
 })
 
--- ── TAB 5: SETTINGS ────────────────────────────────────────────────
-local SettingsTab = Window:Tab({
-    Title = "Settings",
-    Icon = "settings",
-})
+-- ══════════════════════════════════════════════════════════════════
+--   TAB 5 — CÀI ĐẶT
+-- ══════════════════════════════════════════════════════════════════
+local SettingsTab = Window:Tab({ Title = "Cài Đặt", Icon = "settings" })
 
 local SpySettings = SettingsTab:Section({
-    Title = "Spy Settings",
+    Title = "Tuỳ Chỉnh Spy",
     Icon = "sliders",
     Closed = false,
 })
 
-local FuncInfoToggle = SpySettings:Toggle({
+SpySettings:Toggle({
     Title = "Function Info",
-    Desc = "Bat/tat thu thap function info (co the gay lag)",
+    Desc = "Thu thập thông tin function khi spy (có thể gây lag nhẹ)",
     Icon = "zap",
     Value = realconfigs.funcEnabled,
     Callback = function(state)
         configs.funcEnabled = state
-        WindUI:Notify({ Title = "Settings", Content = "Function info: " .. (state and "ON" or "OFF"), Duration = 2 })
+        WindUI:Notify({ Title = "Cài Đặt", Content = "Function Info: " .. (state and "BẬT" or "TẮT"), Duration = 2 })
     end
 })
 
-local AutoblockToggle = SpySettings:Toggle({
+SpySettings:Toggle({
     Title = "Autoblock",
-    Desc = "[BETA] Tu dong an remote spam",
+    Desc = "[BETA] Tự động ẩn remote bị spam quá nhiều",
     Icon = "shield",
     Value = realconfigs.autoblock,
     Callback = function(state)
         configs.autoblock = state
         history = {}; excluding = {}
-        WindUI:Notify({ Title = "Settings", Content = "Autoblock: " .. (state and "ON" or "OFF"), Duration = 2 })
+        WindUI:Notify({ Title = "Cài Đặt", Content = "Autoblock: " .. (state and "BẬT" or "TẮT"), Duration = 2 })
     end
 })
 
-local AdvancedInfoToggle = SpySettings:Toggle({
+SpySettings:Toggle({
     Title = "Advanced Info",
-    Desc = "Hien them thong tin remote",
+    Desc = "Hiển thị thêm thông tin chi tiết về remote",
     Icon = "bar-chart-2",
     Value = realconfigs.advancedinfo,
     Callback = function(state)
         configs.advancedinfo = state
-        WindUI:Notify({ Title = "Settings", Content = "Advanced info: " .. (state and "ON" or "OFF"), Duration = 2 })
+        WindUI:Notify({ Title = "Cài Đặt", Content = "Advanced Info: " .. (state and "BẬT" or "TẮT"), Duration = 2 })
     end
 })
 
 local AboutSection = SettingsTab:Section({
-    Title = "About",
+    Title = "Thông Tin",
     Icon = "info",
-    Closed = false,
+    Closed = true,
 })
 
 AboutSection:Paragraph({
-    Title = "GazzSpy Edition",
-    Desc = "Remote Spy dua tren SimpleSpy Beta\nUI su dung WindUI library\nFolders: GazzSpy/ va GazzSpy/FuncStore/",
+    Title = "GazzSpy — WindUI Edition",
+    Desc = "Dựa trên SimpleSpy Beta bởi 78n\nGiao diện WindUI bởi Footagesus\nFolder lưu: GazzSpy/ và GazzSpy/FuncStore/",
 })
+
+-- ══════════════════════════════════════════════════════════════════
+--   HÀM TẠO BUTTON REMOTE ĐỘNG (gọi từ newRemote)
+-- ══════════════════════════════════════════════════════════════════
+function addRemoteButton(log)
+    remoteCount = remoteCount + 1
+    updateRemoteCountTitle()
+    local rtype = (log.Remote and log.Remote.ClassName) or "Remote"
+    local icon = (rtype == "RemoteFunction") and "git-branch" or "wifi"
+    -- Thêm màu phân biệt loại vào title
+    local prefix = (rtype == "RemoteFunction") and "[Fn] " or "[Ev] "
+    local btnTitle = prefix .. tostring(log.Name)
+
+    xpcall(function()
+        local btn = RemoteListSection:Button({
+            Title = btnTitle,
+            Desc = rtype .. " — Nhấn để xem code",
+            Icon = icon,
+            Callback = function()
+                selectRemote(log, nil)
+            end
+        })
+        table.insert(remoteButtonObjects, btn)
+        remoteButtonMap[log] = btn
+    end, function(err)
+        warn("[GazzSpy] Lỗi tạo button remote: " .. tostring(err))
+    end)
+end
 
 -- ══════════════════════════════════════════════════════════════════
 --              HOOK LOGIC (Nguyen ban tu SimpleSpy)
 -- ══════════════════════════════════════════════════════════════════
-
-local function getRemoteDropdownValues()
-    local vals = {}
-    for _, log in next, logs do
-        if log.Remote then
-            table.insert(vals, log.Remote.Name)
-        end
-    end
-    if #vals == 0 then table.insert(vals, "(chua co log nao)") end
-    return vals
-end
-
-local function updateDropdown()
-    xpcall(function()
-        RemoteDropdown:Set(getRemoteDropdownValues()[1] or "(chua co log nao)")
-    end, function() end)
-end
 
 function newRemote(rtype, data)
     if layoutOrderNum < 1 then layoutOrderNum = 999999999 end
@@ -1252,25 +1268,15 @@ function newRemote(rtype, data)
     layoutOrderNum -= 1
     table.insert(remoteLogs, 1, {nil, nil})
     clean()
-    -- Update dropdown với remote mới
+    -- Thêm button remote vào danh sách WindUI
     spawn(function()
-        local vals = getRemoteDropdownValues()
         xpcall(function()
-            -- Không cần update mọi lần vì sẽ lag, chỉ update sau 0.5s debounce
-        end, function() end)
+            addRemoteButton(log)
+        end, function(err)
+            warn("[GazzSpy] Lỗi addRemoteButton: " .. tostring(err))
+        end)
     end)
 end
-
--- Refresh dropdown button
-SpyControlSection:Button({
-    Title = "Refresh Remote List",
-    Desc = "Cap nhat danh sach remote trong dropdown",
-    Icon = "refresh-cw",
-    Callback = function()
-        local vals = getRemoteDropdownValues()
-        WindUI:Notify({ Title = "GazzSpy", Content = "Co " .. #logs .. " remotes da log!", Duration = 2, Icon = "list" })
-    end
-})
 
 local function getBlockedStatus(remote, id)
     return blocklist[id] or blocklist[remote.Name]
@@ -1484,7 +1490,7 @@ if not getgenv().SimpleSpyExecuted then
         SpyToggle:Set(true)
         WindUI:Notify({
             Title = "GazzSpy",
-            Content = "Da khoi dong! Spy dang bat.",
+            Content = "✓ GazzSpy đã khởi động — Spy đang bật!",
             Duration = 4,
             Icon = "shield",
         })
@@ -1502,10 +1508,12 @@ else
 end
 
 function SimpleSpy:newButton(name, description, onClick)
-    -- Legacy compatibility - map to WindUI button
-    SpyControlSection:Button({
-        Title = name,
-        Desc = description(),
-        Callback = function() onClick() end
-    })
+    -- Legacy compatibility
+    xpcall(function()
+        SpyCtrlSection:Button({
+            Title = name,
+            Desc = (type(description) == "function") and description() or tostring(description),
+            Callback = function() onClick() end
+        })
+    end, function() end)
 end
