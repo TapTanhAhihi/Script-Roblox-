@@ -698,8 +698,6 @@ function onXButtonUnhover()
     TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(37, 36, 38)}):Play()
 end
 
-    toggleSpyMethod()
-end
 
 function connectResize()
     if not workspace.CurrentCamera then
@@ -1638,7 +1636,12 @@ if not getgenv().SimpleSpyExecuted then
     local succeeded,err = pcall(function()
         if not RunService:IsClient() then error("SimpleSpy cannot run on the server!") end
         getgenv().SimpleSpyShutdown = shutdown
-        onToggleButtonClick()
+        onToggleButtonClick() -- auto bật spy
+        -- Update UI trạng thái
+        if toggle then
+            StatusLabel.Text = "● SPY ON"
+            StatusLabel.TextColor3 = Color3.fromRGB(50,220,100)
+        end
         if not hookmetamethod then
             ErrorPrompt("Simple Spy V3 will not function to it's fullest capablity due to your executor not supporting hookmetamethod.",true)
         end
