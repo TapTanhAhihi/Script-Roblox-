@@ -1,9 +1,11 @@
 --!native
--- ╔══════════════════════════════════════════╗
--- ║           GazzSpy — Final Edition        ║
--- ║  UI gốc SimpleSpy + Drag fix + GazzSpy   ║
--- ║  buttons: Save/FuncStore/Hướng dẫn       ║
--- ╚══════════════════════════════════════════╝
+-- ============================================
+-- SimpleSpy Beta - GazzSpy Edition
+-- + Drag menu muot hon (keo TopBar)
+-- + Nut GazzSave: Luu code remote vao GazzSpy/
+-- + Nut Save All: Luu tat ca logs
+-- + Muc FuncStore: Luu Function Info
+-- ============================================
 
 if getgenv().SimpleSpyExecuted and type(getgenv().SimpleSpyShutdown) == "function" then
     getgenv().SimpleSpyShutdown()
@@ -211,6 +213,30 @@ end
 local Highlight = (isfile and loadfile and isfile("Highlight.lua") and loadfile("Highlight.lua")()) or loadstring(game:HttpGet("https://raw.githubusercontent.com/78n/SimpleSpy/main/Highlight.lua"))()
 local LazyFix = loadstring(game:HttpGet("https://raw.githubusercontent.com/78n/Roblox/refs/heads/main/Lua/Libraries/DataToCode/DataToCode.luau"))()
 
+-- ── GazzSpy: Tạo thư mục khi khởi động ───────────────────────────────────
+local GAZZSPY_FOLDER = "GazzSpy"
+local GAZZSPY_FUNC_FOLDER = "GazzSpy/FuncStore"
+
+xpcall(function()
+    if isfolder and makefolder then
+        if not isfolder(GAZZSPY_FOLDER) then
+            makefolder(GAZZSPY_FOLDER)
+        end
+        if not isfolder(GAZZSPY_FUNC_FOLDER) then
+            makefolder(GAZZSPY_FUNC_FOLDER)
+        end
+    end
+end, function(err) warn("[GazzSpy] Lỗi tạo thư mục: "..tostring(err)) end)
+
+-- Helper: làm tên file an toàn
+local function safeName(name)
+    return tostring(name):gsub("[^%w_%-]", "_")
+end
+
+-- Helper: lấy timestamp đơn giản để tên file không trùng
+local function getStamp()
+    return tostring(math.floor(tick() * 1000) % 1000000)
+end
 
 -- ── GUI ────────────────────────────────────────────────────────────────────
 local SimpleSpy3 = Create("ScreenGui",{ResetOnSpawn = false})
@@ -226,8 +252,6 @@ local UIGridLayout = Create("UIGridLayout",{Parent = ScrollingFrame,HorizontalAl
 local TopBar = Create("Frame",{Parent = Background,BackgroundColor3 = Color3.fromRGB(37, 35, 38),BorderSizePixel = 0,Size = UDim2.new(0, 450, 0, 19)})
 local Simple = Create("TextButton",{Parent = TopBar,BackgroundColor3 = Color3.new(1, 1, 1),AutoButtonColor = false,BackgroundTransparency = 1,Position = UDim2.new(0, 5, 0, 0),Size = UDim2.new(0, 57, 0, 18),Font = Enum.Font.SourceSansBold,Text = "GazzSpy",TextColor3 = Color3.fromRGB(255, 180, 50),TextSize = 14,TextXAlignment = Enum.TextXAlignment.Left})
 
--- GazzSpy label nhỏ trên TopBar
--- GazzLabel removed (merged into Simple button)
 
 local CloseButton = Create("TextButton",{Parent = TopBar,BackgroundColor3 = Color3.new(0.145098, 0.141176, 0.14902),BorderSizePixel = 0,Position = UDim2.new(1, -19, 0, 0),Size = UDim2.new(0, 19, 0, 19),Font = Enum.Font.SourceSans,Text = "",TextColor3 = Color3.new(0, 0, 0),TextSize = 14})
 local ImageLabel = Create("ImageLabel",{Parent = CloseButton,BackgroundColor3 = Color3.new(1, 1, 1),BackgroundTransparency = 1,Position = UDim2.new(0, 5, 0, 5),Size = UDim2.new(0, 9, 0, 9),Image = "http://www.roblox.com/asset/?id=5597086202"})
@@ -421,7 +445,9 @@ end
 
 -- ── DRAG MƯỢT HƠN: dùng UserInputService trực tiếp, không qua RenderStepped ─
 function onBarInput(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    local isOk = input.UserInputType == Enum.UserInputType.MouseButton1
+               or input.UserInputType == Enum.UserInputType.Touch
+    if isOk then
         local startMousePos = UserInputService:GetMouseLocation()
         local startFramePos = Background.AbsolutePosition
         local dragging = true
@@ -1400,48 +1426,227 @@ function SimpleSpy:newButton(name, description, onClick)
     return newButton(name, description, onClick)
 end
 
--- ══════════════════════════════════════════════════════
---              GAZZSPY BUTTONS
--- Chỉ giữ những chức năng CÓ TÁC DỤNG
--- ══════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════
+-- GAZZSPY — Setup thư mục
+-- ═══════════════════════════════════════════════════
+local GS_DIR      = "GazzSpy"
+local GS_FUNCDIR  = "GazzSpy/FuncStore"
 
--- Tạo thư mục GazzSpy khi khởi động
-local GAZZSPY_FOLDER = "GazzSpy"
-local GAZZSPY_FUNCSTORE = "GazzSpy/FuncStore"
 xpcall(function()
     if isfolder and makefolder then
-        if not isfolder(GAZZSPY_FOLDER) then makefolder(GAZZSPY_FOLDER) end
-        if not isfolder(GAZZSPY_FUNCSTORE) then makefolder(GAZZSPY_FUNCSTORE) end
+        if not isfolder(GS_DIR)     then makefolder(GS_DIR) end
+        if not isfolder(GS_FUNCDIR) then makefolder(GS_FUNCDIR) end
     end
-end, function(err) warn("[GazzSpy] Lỗi tạo thư mục: "..tostring(err)) end)
+end, function(e) warn("[GazzSpy] "..tostring(e)) end)
 
-local function safeName(n) return tostring(n):gsub("[^%w_%-]","_") end
-local function getStamp() return tostring(math.floor(tick()*1000)%1000000) end
+local function gsSafe(n)
+    return tostring(n):gsub("[^%w_%-]","_")
+end
+local function gsStamp()
+    return tostring(math.floor(tick()*1000)%1000000)
+end
 
--- ① Copy Code
-newButton("Copy Code", function() return "Sao chép code của remote đang chọn vào clipboard" end,
-function()
-    setclipboard(codebox:getString())
-    TextLabel.Text = "✓ Đã copy code!"
+-- ═══════════════════════════════════════════════════
+-- NHÓM 1: Hướng dẫn + Lưu file (ĐẦU TIÊN)
+-- ═══════════════════════════════════════════════════
+
+newButton("Huong Dan", function() return "Xem huong dan su dung GazzSpy" end, function()
+    codebox:setRaw(
+"-- ==========================================
+"..
+"-- GAZZSPY - HUONG DAN SU DUNG
+"..
+"-- ==========================================
+"..
+"
+"..
+"-- [CACH SU DUNG]
+"..
+"-- 1. Script tu dong bat spy khi load
+"..
+"-- 2. Nhan vao ten remote ben trai de xem code
+"..
+"-- 3. Keo thanh TopBar de di chuyen cua so
+"..
+"-- 4. Nhan nut GazzSpy tren TopBar de bat/tat spy
+"..
+"
+"..
+"-- [CAC CHUC NANG]
+"..
+"-- Huong Dan  : Hien thi huong dan nay
+"..
+"-- GazzSave   : Luu code remote dang chon
+"..
+"--              -> GazzSpy/<ten>_<stamp>.lua
+"..
+"-- Save All   : Luu TAT CA remote da spy
+"..
+"--              -> GazzSpy/SaveAll_<stamp>.lua
+"..
+"-- FuncStore  : Luu Function Info remote dang chon
+"..
+"--              -> GazzSpy/FuncStore/<ten>_FuncInfo.lua
+"..
+"-- Copy Code  : Copy code remote dang chon
+"..
+"-- Copy Remote: Copy duong dan day du cua remote
+"..
+"-- Run Code   : Thuc thi lai remote voi args goc
+"..
+"-- Get Script : Lay script da goi remote
+"..
+"-- Func Info  : Xem chi tiet function goi remote
+"..
+"-- Clr Logs   : Xoa toan bo danh sach remote
+"..
+"-- Excl (i)   : An remote nay theo debug ID
+"..
+"-- Excl (n)   : An tat ca remote cung ten
+"..
+"-- Clr Excl   : Bo an, remote hien lai
+"..
+"-- Block (i)  : Chan remote nay khoi fire server
+"..
+"-- Block (n)  : Chan tat ca remote cung ten
+"..
+"-- Clr Block  : Bo chan, remote hoat dong lai
+"..
+"
+"..
+"-- [MAU REMOTE]
+"..
+"-- Vang = RemoteEvent
+"..
+"-- Tim  = RemoteFunction
+"..
+"
+"..
+"-- [LUU Y]
+"..
+"-- Thu muc: GazzSpy/ va GazzSpy/FuncStore/
+"..
+"-- Executor can: hookmetamethod, writefile
+"..
+"-- ==========================================
+"
+    )
+    TextLabel.Text = "Dang hien Huong Dan..."
 end)
 
--- ② Copy Remote Path
-newButton("Copy Remote", function() return "Sao chép đường dẫn đầy đủ của remote đang chọn" end,
-function()
+newButton("GazzSave", function() return "Luu code remote dang chon -> GazzSpy/" end, function()
+    if not (writefile and isfolder) then
+        TextLabel.Text = "Executor khong ho tro writefile!"
+        return
+    end
+    if not selected then TextLabel.Text = "Chua chon remote!"; return end
+    local code = codebox:getString()
+    if not code or code == "" then TextLabel.Text = "Code trong, khong luu."; return end
+    local rn = gsSafe(selected.Remote and selected.Remote.Name or "Unknown")
+    xpcall(function()
+        writefile(GS_DIR.."/"..rn.."_"..gsStamp()..".lua",
+            "-- GazzSpy | Remote: "..rn.."
+
+"..code)
+        TextLabel.Text = "Da luu: "..rn..".lua"
+    end, function(e) TextLabel.Text = "Loi: "..tostring(e) end)
+end)
+
+newButton("Save All", function() return "Luu tat ca remote da spy -> GazzSpy/SaveAll.lua" end, function()
+    if not (writefile and isfolder) then
+        TextLabel.Text = "Executor khong ho tro writefile!"
+        return
+    end
+    if #logs == 0 then TextLabel.Text = "Chua co log nao!"; return end
+    TextLabel.Text = "Dang luu "..tostring(#logs).." remotes..."
+    spawn(function()
+        local out = "-- GazzSpy SaveAll | "..tostring(#logs).." remotes
+
+"
+        local saved = 0
+        for idx, log in next, logs do
+            xpcall(function()
+                local rn = tostring(log.Remote and log.Remote.Name or "Unknown")
+                local s  = log.GenScript or ""
+                if s:find("Generating, please wait") then
+                    s = genScript(log.Remote, log.args)
+                end
+                out  = out.."-- ["..tostring(idx).."] "..rn.."
+"..s.."
+
+"
+                saved = saved + 1
+            end, function(e)
+                out = out.."-- ["..tostring(idx).."] Loi: "..tostring(e).."
+
+"
+            end)
+        end
+        xpcall(function()
+            writefile(GS_DIR.."/SaveAll_"..gsStamp()..".lua", out)
+            TextLabel.Text = "Da luu "..tostring(saved).."/"..tostring(#logs).." remotes!"
+        end, function(e) TextLabel.Text = "Loi ghi file: "..tostring(e) end)
+    end)
+end)
+
+newButton("FuncStore", function() return "Luu Function Info -> GazzSpy/FuncStore/" end, function()
+    if not (writefile and isfolder) then
+        TextLabel.Text = "Executor khong ho tro writefile!"
+        return
+    end
+    if not selected then TextLabel.Text = "Chua chon remote!"; return end
+    local func = selected and selected.Function
+    if not func then TextLabel.Text = "Khong tim thay function!"; return end
+    spawn(function()
+        local fi = ""
+        if typeof(func) ~= "string" then
+            local _, r = xpcall(function()
+                local lc = islclosure(func)
+                local ss = rawget(getfenv(func), "script")
+                return v2v({functionInfo = {
+                    info      = getinfo(func),
+                    constants = lc and deepclone(getconstants(func)) or "N/A",
+                    upvalues  = deepclone(getupvalues(func)),
+                    script    = {
+                        SourceScript  = tostring(ss),
+                        CallingScript = tostring(selected.Source)
+                    }
+                }})
+            end, function(e) return "-- Loi: "..tostring(e) end)
+            fi = r or "-- Khong the gen"
+        else fi = func end
+        local rn  = gsSafe(selected.Remote and selected.Remote.Name or "Unknown")
+        local fc  = "-- GazzSpy FuncStore | "..rn.."
+
+"..fi
+        xpcall(function()
+            writefile(GS_FUNCDIR.."/"..rn.."_FuncInfo_"..gsStamp()..".lua", fc)
+            codebox:setRaw(fc)
+            TextLabel.Text = "FuncStore: Da luu "..rn.."!"
+        end, function(e) TextLabel.Text = "Loi FuncStore: "..tostring(e) end)
+    end)
+end)
+
+-- ═══════════════════════════════════════════════════
+-- NHÓM 2: Chức năng chính
+-- ═══════════════════════════════════════════════════
+
+newButton("Copy Code", function() return "Copy code remote dang chon vao clipboard" end, function()
+    setclipboard(codebox:getString())
+    TextLabel.Text = "Da copy code!"
+end)
+
+newButton("Copy Remote", function() return "Copy duong dan day du cua remote dang chon" end, function()
     if selected and selected.Remote then
         setclipboard(v2s(selected.Remote))
-        TextLabel.Text = "✓ Đã copy path remote!"
-    else
-        TextLabel.Text = "⚠ Chưa chọn remote nào!"
-    end
+        TextLabel.Text = "Da copy path remote!"
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ③ Run Code (thực thi lại remote)
-newButton("Run Code", function() return "Thực thi lại remote đang chọn với args gốc" end,
-function()
+newButton("Run Code", function() return "Thuc thi lai remote dang chon voi args goc" end, function()
     local Remote = selected and selected.Remote
     if Remote then
-        TextLabel.Text = "Đang thực thi..."
+        TextLabel.Text = "Dang thuc thi..."
         xpcall(function()
             local rv
             if Remote:IsA("RemoteEvent") or Remote:IsA("UnreliableRemoteEvent") then
@@ -1449,303 +1654,96 @@ function()
             elseif Remote:IsA("RemoteFunction") then
                 rv = Remote:InvokeServer(unpack(selected.args))
             end
-            TextLabel.Text = ("✓ Thực thi thành công! %s"):format(v2s(rv))
-        end, function(err)
-            TextLabel.Text = ("✗ Lỗi: %s"):format(err)
-        end)
-    else
-        TextLabel.Text = "⚠ Chưa chọn remote nào!"
-    end
+            TextLabel.Text = "Thanh cong! "..tostring(v2s(rv))
+        end, function(err) TextLabel.Text = "Loi: "..tostring(err) end)
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ④ Get Script (lấy script gốc)
-newButton("Get Script", function() return "Lấy script đã gọi remote → copy vào clipboard" end,
-function()
+newButton("Get Script", function() return "Lay script da goi remote, copy vao clipboard" end, function()
     if selected then
-        if not selected.Source then selected.Source = rawget(getfenv(selected.Function),"script") end
+        if not selected.Source then
+            selected.Source = rawget(getfenv(selected.Function), "script")
+        end
         setclipboard(v2s(selected.Source))
-        TextLabel.Text = "✓ Đã copy script!"
-    else
-        TextLabel.Text = "⚠ Chưa chọn remote nào!"
-    end
+        TextLabel.Text = "Da copy script!"
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ⑤ Function Info
-newButton("Func Info", function() return "Xem thông tin chi tiết function đã gọi remote" end,
-function()
+newButton("Func Info", function() return "Xem thong tin chi tiet function da goi remote" end, function()
     local func = selected and selected.Function
     if func then
-        local typeoffunc = typeof(func)
-        if typeoffunc ~= "string" then
-            codebox:setRaw("--[[Đang tạo Function Info...]]")
+        if typeof(func) ~= "string" then
+            codebox:setRaw("--[[Generating Function Info please wait]]")
             RunService.Heartbeat:Wait()
-            local lclosure = islclosure(func)
-            local SourceScript = rawget(getfenv(func),"script")
-            local CallingScript = selected.Source or nil
+            local lclosure     = islclosure(func)
+            local SourceScript = rawget(getfenv(func), "script")
             local infoData = {
-                info = getinfo(func),
-                constants = lclosure and deepclone(getconstants(func)) or "N/A --C Closure",
-                upvalues = deepclone(getupvalues(func)),
-                script = {SourceScript = SourceScript or "nil", CallingScript = CallingScript or "nil"}
-            }
-            if configs.advancedinfo then
-                local Remote = selected.Remote
-                infoData["advancedinfo"] = {
-                    Metamethod = selected.metamethod,
-                    DebugId = {
-                        SourceScriptDebugId = SourceScript and typeof(SourceScript)=="Instance" and OldDebugId(SourceScript) or "N/A",
-                        CallingScriptDebugId = CallingScript and typeof(SourceScript)=="Instance" and OldDebugId(CallingScript) or "N/A",
-                        RemoteDebugId = OldDebugId(Remote)
-                    },
-                    Protos = lclosure and getprotos(func) or "N/A"
+                info      = getinfo(func),
+                constants = lclosure and deepclone(getconstants(func)) or "N/A",
+                upvalues  = deepclone(getupvalues(func)),
+                script    = {
+                    SourceScript  = SourceScript or "nil",
+                    CallingScript = selected.Source or "nil"
                 }
-            end
-            codebox:setRaw("--[[Đang chuyển đổi...]]")
+            }
+            codebox:setRaw("--[[Converting...]]")
             selected.Function = v2v({functionInfo = infoData})
         end
-        codebox:setRaw("-- Function Info | GazzSpy\n-- Generated by GazzSpy\n\n"..selected.Function)
-        TextLabel.Text = "✓ Đã tạo Function Info!"
-    else
-        TextLabel.Text = "⚠ Không tìm thấy function!"
-    end
+        codebox:setRaw("-- Function Info
+
+"..selected.Function)
+        TextLabel.Text = "Da tao Function Info!"
+    else TextLabel.Text = "Khong tim thay function!" end
 end)
 
--- ⑥ Clr Logs
-newButton("Clr Logs", function() return "Xóa toàn bộ danh sách remote đã spy" end,
-function()
-    TextLabel.Text = "Đang xóa..."
+newButton("Clr Logs", function() return "Xoa toan bo danh sach remote da spy" end, function()
     clear(logs)
-    for i,v in next, LogList:GetChildren() do
+    for i, v in next, LogList:GetChildren() do
         if not v:IsA("UIListLayout") then v:Destroy() end
     end
     codebox:setRaw("")
     selected = nil
-    TextLabel.Text = "✓ Đã xóa tất cả logs!"
+    TextLabel.Text = "Da xoa logs!"
 end)
 
--- ⑦ Exclude (i) — ẩn remote này theo ID
-newButton("Excl (i)", function() return "Ẩn remote này (theo ID) — remote vẫn hoạt động nhưng GazzSpy sẽ không log nữa" end,
-function()
+-- ═══════════════════════════════════════════════════
+-- NHÓM 3: Exclude & Block
+-- ═══════════════════════════════════════════════════
+
+newButton("Excl (i)", function() return "An remote nay theo ID - van hoat dong nhung khong log" end, function()
     if selected then
         blacklist[OldDebugId(selected.Remote)] = true
-        TextLabel.Text = "✓ Đã ẩn remote: "..tostring(selected.Name)
-    else TextLabel.Text = "⚠ Chưa chọn remote!" end
+        TextLabel.Text = "Da an: "..tostring(selected.Name)
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ⑧ Exclude (n) — ẩn theo tên
-newButton("Excl (n)", function() return "Ẩn tất cả remote cùng tên — thích hợp để ẩn remote spam" end,
-function()
+newButton("Excl (n)", function() return "An tat ca remote cung ten" end, function()
     if selected then
         blacklist[selected.Name] = true
-        TextLabel.Text = "✓ Đã ẩn tên: "..tostring(selected.Name)
-    else TextLabel.Text = "⚠ Chưa chọn remote!" end
+        TextLabel.Text = "Da an ten: "..tostring(selected.Name)
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ⑨ Clr Exclude
-newButton("Clr Excl", function() return "Xóa danh sách ẩn — các remote bị ẩn sẽ hiện lại" end,
-function()
+newButton("Clr Excl", function() return "Xoa danh sach an, remote hien lai" end, function()
     blacklist = {}
-    TextLabel.Text = "✓ Đã xóa danh sách ẩn!"
+    TextLabel.Text = "Da xoa danh sach an!"
 end)
 
--- ⑩ Block (i) — chặn remote này theo ID
-newButton("Block (i)", function() return "Chặn remote này khỏi fire server (theo ID) — vẫn được log nhưng không gửi lên server" end,
-function()
+newButton("Block (i)", function() return "Chan remote nay khoi fire server (theo ID)" end, function()
     if selected then
         blocklist[OldDebugId(selected.Remote)] = true
-        TextLabel.Text = "✓ Đã chặn: "..tostring(selected.Name)
-    else TextLabel.Text = "⚠ Chưa chọn remote!" end
+        TextLabel.Text = "Da chan: "..tostring(selected.Name)
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ⑪ Block (n) — chặn theo tên
-newButton("Block (n)", function() return "Chặn tất cả remote cùng tên khỏi fire server" end,
-function()
+newButton("Block (n)", function() return "Chan tat ca remote cung ten" end, function()
     if selected then
         blocklist[selected.Name] = true
-        TextLabel.Text = "✓ Đã chặn tên: "..tostring(selected.Name)
-    else TextLabel.Text = "⚠ Chưa chọn remote!" end
+        TextLabel.Text = "Da chan ten: "..tostring(selected.Name)
+    else TextLabel.Text = "Chua chon remote!" end
 end)
 
--- ⑫ Clr Block
-newButton("Clr Block", function() return "Xóa danh sách chặn — các remote bị chặn sẽ hoạt động lại" end,
-function()
+newButton("Clr Block", function() return "Xoa danh sach chan, remote hoat dong lai" end, function()
     blocklist = {}
-    TextLabel.Text = "✓ Đã xóa danh sách chặn!"
-end)
-
--- ⑬ GazzSave — lưu code remote đang chọn
-newButton("GazzSave", function() return "Lưu code remote đang chọn vào GazzSpy/<tên>.lua" end,
-function()
-    if not (writefile and isfolder) then TextLabel.Text = "⚠ Executor không hỗ trợ writefile!"; return end
-    if not selected then TextLabel.Text = "⚠ Chưa chọn remote!"; return end
-    local code = codebox:getString()
-    if not code or code == "" then TextLabel.Text = "⚠ Code trống, không lưu."; return end
-    local rname = safeName(selected.Remote and selected.Remote.Name or "Unknown")
-    xpcall(function()
-        writefile(GAZZSPY_FOLDER.."/"..rname.."_"..getStamp()..".lua",
-            "-- GazzSpy Save | Remote: "..rname.."\n\n"..code)
-        TextLabel.Text = "✓ Đã lưu: "..rname..".lua → GazzSpy/"
-    end, function(e) TextLabel.Text = "✗ Lỗi: "..tostring(e) end)
-end)
-
--- ⑭ Save All — lưu tất cả remote
-newButton("Save All", function() return "Lưu tất cả remote đã spy vào GazzSpy/SaveAll_<stamp>.lua" end,
-function()
-    if not (writefile and isfolder) then TextLabel.Text = "⚠ Executor không hỗ trợ writefile!"; return end
-    if #logs == 0 then TextLabel.Text = "⚠ Chưa có log nào!"; return end
-    TextLabel.Text = "Đang lưu "..#logs.." remotes..."
-    spawn(function()
-        local allCode = "-- GazzSpy | Save All Remotes\n"
-            .."-- Tổng số: "..#logs.."\n"
-            .."-- Thời gian: "..os.date and os.date() or tostring(tick()).."\n\n"
-        local saved = 0
-        for idx, log in next, logs do
-            xpcall(function()
-                local rname = tostring(log.Remote and log.Remote.Name or "Unknown_"..idx)
-                local s = log.GenScript or ""
-                if s:find("Generating, please wait") then
-                    s = genScript(log.Remote, log.args)
-                end
-                allCode = allCode
-                    .."-- ["..idx.."] Remote: "..rname.."\n"
-                    ..s.."\n\n"
-                saved = saved + 1
-            end, function(e)
-                allCode = allCode.."-- ["..idx.."] Lỗi: "..tostring(e).."\n\n"
-            end)
-        end
-        xpcall(function()
-            writefile(GAZZSPY_FOLDER.."/SaveAll_"..getStamp()..".lua", allCode)
-            TextLabel.Text = "✓ Đã lưu "..saved.."/"..#logs.." remotes → GazzSpy/"
-        end, function(e) TextLabel.Text = "✗ Lỗi ghi file: "..tostring(e) end)
-    end)
-end)
-
--- ⑮ FuncStore — lưu Function Info
-newButton("FuncStore", function() return "Lưu Function Info của remote đang chọn → GazzSpy/FuncStore/" end,
-function()
-    if not (writefile and isfolder) then TextLabel.Text = "⚠ Executor không hỗ trợ writefile!"; return end
-    if not selected then TextLabel.Text = "⚠ Chưa chọn remote!"; return end
-    local func = selected and selected.Function
-    if not func then TextLabel.Text = "⚠ Không tìm thấy function!"; return end
-    spawn(function()
-        local funcInfo = ""
-        if typeof(func) ~= "string" then
-            local ok, result = xpcall(function()
-                local lc = islclosure(func)
-                local ss = rawget(getfenv(func),"script")
-                return v2v({functionInfo = {
-                    info = getinfo(func),
-                    constants = lc and deepclone(getconstants(func)) or "N/A",
-                    upvalues = deepclone(getupvalues(func)),
-                    script = {SourceScript = ss or "nil", CallingScript = selected.Source or "nil"}
-                }})
-            end, function(e) return "-- Lỗi gen: "..tostring(e) end)
-            funcInfo = result or "-- Không thể gen"
-        else funcInfo = func end
-        local rname = safeName(selected.Remote and selected.Remote.Name or "Unknown")
-        local content = "-- GazzSpy FuncStore\n-- Remote: "..rname.."\n\n"..funcInfo
-        xpcall(function()
-            writefile(GAZZSPY_FUNCSTORE.."/"..rname.."_FuncInfo_"..getStamp()..".lua", content)
-            codebox:setRaw(content)
-            TextLabel.Text = "✓ FuncStore: Đã lưu "..rname.."!"
-        end, function(e) TextLabel.Text = "✗ Lỗi FuncStore: "..tostring(e) end)
-    end)
-end)
-
--- ⑯ Hướng Dẫn — giải thích từng chức năng
-newButton("Huong Dan", function() return "Xem hướng dẫn chi tiết tất cả chức năng của GazzSpy" end,
-function()
-    local guide = [[-- ══════════════════════════════════════════
--- GAZZSPY — HƯỚNG DẪN SỬ DỤNG CHI TIẾT
--- ══════════════════════════════════════════
-
--- [CÁCH SỬ DỤNG CƠ BẢN]
--- 1. Mở game Roblox và chạy script GazzSpy
--- 2. Spy sẽ TỰ ĐỘNG bật — bắt đầu ghi lại remote
--- 3. Nhấn vào tên remote bên trái để xem code
--- 4. Nhấn nút "GazzSpy" trên TopBar để bật/tắt spy
--- 5. Kéo TopBar để di chuyển cửa sổ
-
--- [DANH SÁCH CHỨC NĂNG]
-
--- ① Copy Code
---    → Sao chép code của remote đang chọn vào clipboard
---    → Dùng: Chọn remote → Copy Code → paste vào script
-
--- ② Copy Remote
---    → Sao chép đường dẫn đầy đủ của remote (vd: game.ReplicatedStorage.RE)
---    → Dùng để biết remote nằm ở đâu trong game
-
--- ③ Run Code
---    → Thực thi lại remote đang chọn với đúng args đã spy
---    → Cẩn thận: có thể gây lag hoặc lỗi nếu args không hợp lệ
-
--- ④ Get Script
---    → Lấy script đã gọi remote → copy vào clipboard
---    → Không phải lúc nào cũng tìm được (phụ thuộc executor)
-
--- ⑤ Func Info
---    → Xem thông tin chi tiết của function đã gọi remote
---    → Gồm: constants, upvalues, source script, calling script
---    → Hữu ích để phân tích logic game
-
--- ⑥ Clr Logs
---    → Xóa toàn bộ danh sách remote đã ghi
---    → Dùng khi quá nhiều remote gây rối
-
--- ⑦ Excl (i) — Exclude theo ID
---    → Ẩn remote này khỏi danh sách (theo debug ID)
---    → Remote vẫn hoạt động bình thường, chỉ không log nữa
-
--- ⑧ Excl (n) — Exclude theo tên
---    → Ẩn tất cả remote có cùng tên
---    → Dùng để ẩn remote spam (fire liên tục)
-
--- ⑨ Clr Excl
---    → Xóa danh sách ẩn → các remote bị ẩn sẽ hiện lại
-
--- ⑩ Block (i) — Chặn theo ID
---    → Ngăn remote này gửi dữ liệu lên server
---    → Remote vẫn được log nhưng không fire thật
-
--- ⑪ Block (n) — Chặn theo tên
---    → Ngăn tất cả remote cùng tên gửi lên server
-
--- ⑫ Clr Block
---    → Xóa danh sách chặn → remote hoạt động lại bình thường
-
--- ⑬ GazzSave
---    → Lưu code remote đang chọn vào file
---    → Vị trí: GazzSpy/<tên_remote>_<stamp>.lua
---    → Yêu cầu: executor hỗ trợ writefile
-
--- ⑭ Save All
---    → Lưu TẤT CẢ remote đã spy vào 1 file duy nhất
---    → Vị trí: GazzSpy/SaveAll_<stamp>.lua
---    → Hữu ích khi muốn lưu toàn bộ session
-
--- ⑮ FuncStore
---    → Lưu Function Info của remote đang chọn
---    → Vị trí: GazzSpy/FuncStore/<tên>_FuncInfo_<stamp>.lua
---    → Dùng để lưu và phân tích function sau
-
--- ⑯ Huong Dan
---    → Cái này đây — hướng dẫn sử dụng!
-
--- [CÁC MÀU REMOTE]
--- 🟡 Vàng = RemoteEvent (FireServer)
--- 🟣 Tím  = RemoteFunction (InvokeServer)
-
--- [LƯU Ý]
--- • GazzSpy tạo thư mục: GazzSpy/ và GazzSpy/FuncStore/
--- • Kéo cửa sổ bằng TopBar
--- • Nút trái (ẩn/hiện side panel) = nút giữa TopBar
--- • Executor cần hỗ trợ: hookmetamethod, writefile
-
--- ══════════════════════════════════════════
--- Made by GazzSpy | Dựa trên SimpleSpy Beta
--- ══════════════════════════════════════════]]
-    codebox:setRaw(guide)
-    TextLabel.Text = "Đang hiển thị Hướng Dẫn..."
+    TextLabel.Text = "Da xoa danh sach chan!"
 end)
